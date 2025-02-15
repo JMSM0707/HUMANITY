@@ -28,7 +28,7 @@ Python 3.8 dan yuqori va PIP o'rnatilganligiga ishonch hosil qiling.
 
 1. **Repozitoriy klonlash:**
    ```bash
-   
+   git clone https://github.com/JMSM0707/HUMANITY.git
    ```
    ```bash
    cd Humanity Protocol
