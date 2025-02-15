@@ -1,0 +1,239 @@
+Ushbu kod Humanity Protocol test tarmog'ida ishlaydigan skript bo'lib, u asosan ikkita asosiy vazifani bajaradi: mukofotlarni talab qilish va faucetdan token olish. Kodingizni qismlarga ajratib, har bir qismni tushuntiraman:
+
+1. Kutubxonalar va Dastlabki Sozlashlar
+
+from web3 import Web3
+from colorama import init, Fore, Style
+import sys
+import time
+import requests
+from fake_useragent import UserAgent
+from rich.console import Console
+import threading
+import random
+from datetime import datetime, timedelta
+import logging
+import os
+Web3: Ethereum blokcheyni bilan ishlash uchun kutubxona.
+
+Colorama: Konsolga rangli matn chiqarish uchun.
+
+Rich: Konsolga chiroyli chiqishlar uchun.
+
+Fake_useragent: So'rovlar uchun tasodifiy user-agent yaratish.
+
+Threading: Bir vaqtning o'zida bir nechta vazifalarni bajarish uchun.
+
+Logging: Dastur ishlashi haqida ma'lumotlarni saqlash uchun.
+
+2. Doimiy O'zgaruvchilar
+
+RPC_URL = 'https://rpc.testnet.humanity.org'
+FAUCET_API_URL = "https://faucet.testnet.humanity.org/api/claim"
+CONTRACT_ADDRESS = '0xa18f6FCB2Fd4884436d10610E69DB7BFa1bFe8C7'
+PRIVATE_KEYS_FILE = 'private_keys.txt'
+PROXIES_FILE = 'proxy.txt'
+LOG_FILE = 'script.log'
+WAIT_TIME_AFTER_REWARDS = 24 * 60 * 60  # 24 soat
+WAIT_TIME_AFTER_ERROR = 60  # 1 daqiqa
+LOG_CLEANUP_INTERVAL = 3600  # 1 soat
+FAUCET_DELAY = 5 * 60  # 5 daqiqa
+DELAY_BETWEEN_ACCOUNTS = 5  # 5 soniya
+RPC_URL: Humanity Protocol test tarmog'iga ulanish uchun URL.
+
+FAUCET_API_URL: Faucetdan token olish uchun API manzili.
+
+CONTRACT_ADDRESS: Mukofotlarni talab qilish uchun shartnoma manzili.
+
+PRIVATE_KEYS_FILE: Hamyonlar uchun maxfiy kalitlar fayli.
+
+PROXIES_FILE: Proksi-serverlar fayli.
+
+LOG_FILE: Log fayli nomi.
+
+WAIT_TIME_AFTER_REWARDS: Mukofotlarni talab qilgandan keyin 24 soat kutish.
+
+WAIT_TIME_AFTER_ERROR: Xatolik yuz berganda 1 daqiqa kutish.
+
+LOG_CLEANUP_INTERVAL: Log faylini tozalash oralig'i (1 soat).
+
+FAUCET_DELAY: Faucetdan token olish oralig'i (5 daqiqa).
+
+DELAY_BETWEEN_ACCOUNTS: Har bir hamyon orasidagi kutish vaqti (5 soniya).
+
+3. Funksiyalar
+3.1. Proksi-serverlarni Yuklash
+
+def load_proxies(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            proxies = [line.strip() for line in file if line.strip()]
+            console.print(f"[bold magenta]?? {len(proxies)} Proksi yuklandi![/bold magenta]")
+            logging.info(f"{len(proxies)} Proksi yuklandi!")
+            return proxies
+    except FileNotFoundError:
+        console.print(f"{Fore.RED}?? Fayl {file_path} topilmadi!")
+        logging.error(f"Fayl {file_path} topilmadi!")
+        sys.exit(1)
+Fayldan proksi-serverlarni o'qiydi va ularni ro'yxatga joylaydi. Agar fayl topilmasa, xatolik chiqaradi va dasturni to'xtatadi.
+
+3.2. Maxfiy Kalitlarni Yuklash
+
+def load_private_keys(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            keys = [line.strip() for line in file if line.strip()]
+            wallets = [{"private_key": key, "address": Web3().eth.account.from_key(key).address} for key in keys]
+            console.print(f"[bold magenta]?? {len(wallets)} Hamyonlar yuklandi![/bold magenta]")
+            logging.info(f"{len(wallets)} Hamyonlar yuklandi!")
+            return wallets
+    except FileNotFoundError:
+        console.print(f"{Fore.RED}?? Fayl {file_path} topilmadi!")
+        logging.error(f"Fayl {file_path} topilmadi!")
+        sys.exit(1)
+Fayldan maxfiy kalitlarni o'qiydi va har bir kalit uchun hamyon manzilini hisoblab, ro'yxatga joylaydi. Agar fayl topilmasa, xatolik chiqaradi va dasturni to'xtatadi.
+
+3.3. Blokcheyn Ulanishini Sozlash
+
+def setup_blockchain_connection(rpc_url, proxy=None):
+    if proxy:
+        from web3.middleware import geth_poa_middleware
+        import os
+        os.environ['HTTP_PROXY'] = proxy
+        os.environ['HTTPS_PROXY'] = proxy
+        web3 = Web3(Web3.HTTPProvider(rpc_url))
+        web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+    else:
+        web3 = Web3(Web3.HTTPProvider(rpc_url))
+    
+    if web3.is_connected():
+        console.print("[bold green]? Humanity Protocolga ulandi![/bold green]")
+        logging.info("Humanity Protocolga ulandi!")
+    else:
+        console.print(f"{Fore.RED}? Ulanishda xatolik yuz berdi")
+        logging.error("Ulanishda xatolik yuz berdi")
+        sys.exit(1)
+    return web3
+Blokcheyn bilan ulanishni sozlaydi. Agar proksi berilgan bo'lsa, ulanishni proksi orqali amalga oshiradi. Agar ulanish muvaffaqiyatli bo'lsa, konsolga xabar chiqaradi, aks holda xatolik chiqaradi va dasturni to'xtatadi.
+
+3.4. Loglarni Tozalash
+
+def clean_up_old_logs():
+    while True:
+        time.sleep(LOG_CLEANUP_INTERVAL)
+        now = datetime.now()
+        one_hour_ago = now - timedelta(hours=1)
+        with open(LOG_FILE, 'r') as file:
+            lines = file.readlines()
+        with open(LOG_FILE, 'w') as file:
+            for line in lines:
+                log_time_str = line.split(" - ")[0]
+                log_time = datetime.strptime(log_time_str, "%Y-%m-%d %H:%M:%S")
+                if log_time > one_hour_ago:
+                    file.write(line)
+Log faylidan eski yozuvlarni o'chiradi. Har bir soatda log faylini tekshiradi va bir soatdan oldingi yozuvlarni o'chiradi.
+
+3.5. Mukofotlarni Talab Qilish
+
+def process_claim(sender_address, private_key, web3, contract):
+    try:
+        nonce = web3.eth.get_transaction_count(sender_address, 'pending')
+        gas_price = int(web3.eth.gas_price * 1.2)
+        gas_amount = int(contract.functions.claimReward().estimate_gas({
+            'chainId': web3.eth.chain_id,
+            'from': sender_address,
+            'gasPrice': gas_price,
+            'nonce': nonce
+        }))
+        transaction = contract.functions.claimReward().build_transaction({
+            'chainId': web3.eth.chain_id,
+            'from': sender_address,
+            'gas': gas_amount,
+            'gasPrice': gas_price,
+            'nonce': nonce
+        })
+        signed_txn = web3.eth.account.sign_transaction(transaction, private_key=private_key)
+        tx_hash = web3.eth.send_raw_transaction(signed_txn.raw_transaction)
+        tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+        tx_hash_hex = web3.to_hex(tx_hash)
+        console.print(f"? [bold green]Tranzaksiya muvaffaqiyatli amalga oshirildi {sender_address} | TX Hash: {tx_hash_hex} | Vaqt: {display_current_time()}[/bold green]")
+        logging.info(f"Tranzaksiya muvaffaqiyatli amalga oshirildi {sender_address} | TX Hash: {tx_hash_hex}")
+        return tx_hash_hex
+    except Exception as e:
+        if "already known" in str(e):
+            console.print(f"?? [yellow]Tranzaksiya allaqachon yuborilgan: {sender_address}[/yellow]")
+            logging.warning(f"Tranzaksiya allaqachon yuborilgan: {sender_address}")
+            return "already_known"
+        else:
+            console.print(f"?? [red]Da'voni ko?rib chiqishda xatolik yuz berdi {sender_address}: {str(e)}[/red]")
+            logging.error(f"Da'voni ko?rib chiqishda xatolik yuz berdi {sender_address}: {str(e)}")
+            return None
+Mukofotlarni talab qilish uchun tranzaksiya yaratadi va yuboradi. Agar tranzaksiya muvaffaqiyatli bo'lsa, konsolga xabar chiqaradi, aks holda xatolik chiqaradi.
+
+3.6. Faucetdan Token Olish
+
+def claim_faucet(wallets, proxies):
+    ua = UserAgent()
+    while True:
+        random.shuffle(wallets)
+        for wallet, proxy in zip(wallets, proxies):
+            headers = {
+                "User-Agent": ua.random,
+                "Content-Type": "application/json",
+            }
+            payload = {"address": wallet["address"]}
+            try:
+                response = requests.post(FAUCET_API_URL, json=payload, headers=headers, proxies={"http": proxy, "https": proxy})
+                if response.status_code == 200:
+                    tx_hash = response.json().get("msg", "No TX Hash")
+                    console.print(f"?? [bold green]Krandan da'vo qilindi {wallet['address']}![/bold green] - TX Hash: {tx_hash} - Vaqt: {display_current_time()}")
+                    logging.info(f"Krandan da'vo qilindi {wallet['address']}! - TX Hash: {tx_hash}")
+                else:
+                    console.print(f"?? [yellow]Urinish amalga oshmadi {wallet['address']} - Status kodi: {response.status_code}[/yellow]")
+                    logging.warning(f"Urinish amalga oshmadi {wallet['address']} - Status kodi: {response.status_code}")
+            except Exception as e:
+                console.print(f"?? [red]Kranga da'vo qilishda xatolik yuz berdi {wallet['address']}: {e}[/red]")
+                logging.error(f"Kranga da'vo qilishda xatolik yuz berdi {wallet['address']}: {e}")
+            time.sleep(DELAY_BETWEEN_ACCOUNTS)
+        console.print(f"?? [cyan]Barcha akkauntlar uchun faucet qilindi. Keyingi urinishdan oldin 5 daqiqa kutilmoqda...[/cyan]")
+        logging.info("Barcha akkauntlar uchun faucet qilindi. Keyingi urinishdan oldin 5 daqiqa kutilmoqda...")
+        display_countdown(FAUCET_DELAY, "Keyingi faucet urinishidan oldin qolgan vaqt")
+Faucetdan token olish uchun so'rov yuboradi. Har bir hamyon uchun proksi orqali so'rov yuboradi va natijani konsolga chiqaradi.
+
+4. Asosiy Funksiya
+
+def main():
+    proxies = load_proxies(PROXIES_FILE)
+    wallets = load_private_keys(PRIVATE_KEYS_FILE)
+    web3 = setup_blockchain_connection(RPC_URL)
+    contract = web3.eth.contract(address=Web3.to_checksum_address(CONTRACT_ADDRESS), abi=CONTRACT_ABI)
+
+    if len(wallets) != len(proxies):
+        console.print(f"{Fore.RED}?? Hamyonlar va proksi-serverlar soni bir xil bo'lishi kerak!")
+        logging.error("Hamyonlar va proksi-serverlar soni bir xil bo'lishi kerak!")
+        sys.exit(1)
+
+    log_cleanup_thread = threading.Thread(target=clean_up_old_logs)
+    log_cleanup_thread.daemon = True
+    log_cleanup_thread.start()
+
+    rewards_thread = threading.Thread(target=claim_rewards, args=(wallets, web3, contract))
+    rewards_thread.daemon = True
+    rewards_thread.start()
+
+    faucet_thread = threading.Thread(target=claim_faucet, args=(wallets, proxies))
+    faucet_thread.daemon = True
+    faucet_thread.start()
+
+    while True:
+        time.sleep(1)
+Dasturni ishga tushiradi. Proksi-serverlar va hamyonlarni yuklaydi, blokcheyn bilan ulanishni sozlaydi, loglarni tozalash, mukofotlarni talab qilish va faucetdan token olish jarayonlarini parallel ravishda ishga tushiradi.
+
+5. Dasturni Ishga Tushirish
+
+if __name__ == "__main__":
+    main()
+Dasturni ishga tushiradi.
+
+Xulosa:
+Ushbu skript Humanity Protocol test tarmog'ida mukofotlarni talab qilish va faucetdan token olish jarayonlarini avtomatlashtiradi. Har bir hamyon uchun proksi orqali so'rovlar yuboriladi va har bir tranzaksiya natijasi konsolga chiqariladi. Skript bir vaqtning o'zida bir nechta vazifalarni bajarish uchun threadingdan foydalanadi.
